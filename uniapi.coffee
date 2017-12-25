@@ -1,3 +1,24 @@
+class Order
+  constructor: ->
+    @_buffer = []
+    @_last = 0
+
+  _execute: ->
+    if @_buffer.length is 0
+      return
+    diff =  @_last + @_buffer[0].delay - (new Date()).getTime()
+    if diff > 0
+      return setTimeout =>
+        @_execute()
+      , diff
+    @_buffer.shift().fn()
+    @_last = (new Date()).getTime()
+    @_execute()
+
+  next: (fn, delay=0)->
+    @_buffer.push({'fn': fn, 'delay': delay})
+    @_execute()
+
 GET = ((a)->
   b = {}
   if a is ''
@@ -38,6 +59,7 @@ _GET = (p)->
   return false
 
 window.UniversalApi = class UniversalApi
+  _order: new Order()
   constructor: (params)->
     @_url_params = params
     @options = {
@@ -57,8 +79,7 @@ window.UniversalApi = class UniversalApi
       url.push "#{k}=#{decodeURIComponent(v)}"
     url.join('&')
 
-  authorize: (callback)->
-    @_request(callback)
+  authorize: (callback)-> @_request(callback)
 
   session: -> @_url_params.session
 
@@ -66,18 +87,18 @@ window.UniversalApi = class UniversalApi
     if @_media is 'draugiem'
       draugiemSay(options.title, options.url, '', options.text, callback)
 
-  data: (k, v=false)->
-    if v
-      additional = {}
+  get: (k)-> if @user then @user.data[k] else false
+
+  save: (ob, callback=->)->
+    additional = {}
+    for k, v of ob
       additional["data.#{k}"] = v
-      return @_request((->), additional)
-    if @user
-      return @user.data[k]
-    return false
+    return @_request(callback, additional)
 
   _request: (callback, additional={})->
-    loadJSONP "#{@options.url}?#{@_url(additional)}", (data)=>
-      if data.session
-        @_url_params['session'] = data.session
-        @user = data
-      callback(data)
+    @_order.next =>
+      loadJSONP "#{@options.url}?#{@_url(additional)}", (data)=>
+        if data.session
+          @_url_params['session'] = data.session
+          @user = data
+        callback(data)
